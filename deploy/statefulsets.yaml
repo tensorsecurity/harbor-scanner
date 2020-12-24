@@ -1,0 +1,554 @@
+apiVersion: v1
+items:
+- apiVersion: apps/v1
+  kind: StatefulSet
+  metadata:
+    labels:
+      app: redis
+      chart: redis-12.2.3
+      heritage: Tiller
+      release: tensorsec-cache
+    name: tensorsec-cache-redis-master
+  spec:
+    podManagementPolicy: OrderedReady
+    replicas: 1
+    revisionHistoryLimit: 10
+    selector:
+      matchLabels:
+        app: redis
+        release: tensorsec-cache
+        role: master
+    serviceName: tensorsec-cache-redis-headless
+    template:
+      metadata:
+        labels:
+          app: redis
+          chart: redis-12.2.3
+          release: tensorsec-cache
+          role: master
+      spec:
+        containers:
+        - command:
+          - /bin/bash
+          - -c
+          - /opt/bitnami/scripts/start-scripts/start-master.sh
+          env:
+          - name: REDIS_REPLICATION_MODE
+            value: master
+          - name: REDIS_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                key: redis-password
+                name: tensorsec-cache-redis
+          - name: REDIS_TLS_ENABLED
+            value: "no"
+          - name: REDIS_PORT
+            value: "6379"
+          image: docker.io/bitnami/redis:6.0.9-debian-10-r38
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            exec:
+              command:
+              - sh
+              - -c
+              - /health/ping_liveness_local.sh 5
+            failureThreshold: 5
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            successThreshold: 1
+            timeoutSeconds: 6
+          name: redis
+          ports:
+          - containerPort: 6379
+            name: redis
+            protocol: TCP
+          readinessProbe:
+            exec:
+              command:
+              - sh
+              - -c
+              - /health/ping_readiness_local.sh 1
+            failureThreshold: 5
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            successThreshold: 1
+            timeoutSeconds: 2
+          resources: {}
+          securityContext:
+            procMount: Default
+            runAsUser: 1001
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /opt/bitnami/scripts/start-scripts
+            name: start-scripts
+          - mountPath: /health
+            name: health
+          - mountPath: /data
+            name: redis-data
+          - mountPath: /opt/bitnami/redis/mounted-etc
+            name: config
+          - mountPath: /opt/bitnami/redis/etc/
+            name: redis-tmp-conf
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext:
+          fsGroup: 1001
+        serviceAccount: default
+        serviceAccountName: default
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - configMap:
+            defaultMode: 493
+            name: tensorsec-cache-redis-scripts
+          name: start-scripts
+        - configMap:
+            defaultMode: 493
+            name: tensorsec-cache-redis-health
+          name: health
+        - configMap:
+            defaultMode: 420
+            name: tensorsec-cache-redis
+          name: config
+        - emptyDir: {}
+          name: redis-tmp-conf
+    updateStrategy:
+      type: RollingUpdate
+    volumeClaimTemplates:
+    - metadata:
+        creationTimestamp: null
+        labels:
+          app: redis
+          component: master
+          heritage: Tiller
+          release: tensorsec-cache
+        name: redis-data
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        dataSource: null
+        resources:
+          requests:
+            storage: 8Gi
+- apiVersion: apps/v1
+  kind: StatefulSet
+  metadata:
+    labels:
+      app.kubernetes.io/component: mongodb
+      app.kubernetes.io/instance: tensorsec-mongo
+      app.kubernetes.io/managed-by: Tiller
+      app.kubernetes.io/name: mongodb
+      helm.sh/chart: mongodb-10.3.1
+    name: tensorsec-mongo-mongodb
+  spec:
+    podManagementPolicy: OrderedReady
+    replicas: 2
+    revisionHistoryLimit: 10
+    selector:
+      matchLabels:
+        app.kubernetes.io/component: mongodb
+        app.kubernetes.io/instance: tensorsec-mongo
+        app.kubernetes.io/name: mongodb
+    serviceName: tensorsec-mongo-mongodb-headless
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app.kubernetes.io/component: mongodb
+          app.kubernetes.io/instance: tensorsec-mongo
+          app.kubernetes.io/managed-by: Tiller
+          app.kubernetes.io/name: mongodb
+          helm.sh/chart: mongodb-10.3.1
+      spec:
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/component: mongodb
+                    app.kubernetes.io/instance: tensorsec-mongo
+                    app.kubernetes.io/name: mongodb
+                namespaces:
+                - harbor-scanner
+                topologyKey: kubernetes.io/hostname
+              weight: 1
+        containers:
+        - command:
+          - /scripts/setup.sh
+          env:
+          - name: BITNAMI_DEBUG
+            value: "false"
+          - name: MY_POD_NAME
+            valueFrom:
+              fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.name
+          - name: MY_POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.namespace
+          - name: K8S_SERVICE_NAME
+            value: tensorsec-mongo-mongodb-headless
+          - name: MONGODB_INITIAL_PRIMARY_HOST
+            value: tensorsec-mongo-mongodb-0.$(K8S_SERVICE_NAME).$(MY_POD_NAMESPACE).svc.cluster.local
+          - name: MONGODB_REPLICA_SET_NAME
+            value: rs0
+          - name: MONGODB_ADVERTISED_HOSTNAME
+            value: $(MY_POD_NAME).$(K8S_SERVICE_NAME).$(MY_POD_NAMESPACE).svc.cluster.local
+          - name: MONGODB_USERNAME
+            value: redstone
+          - name: MONGODB_DATABASE
+            value: vegeta
+          - name: MONGODB_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                key: mongodb-password
+                name: tensorsec-mongo-mongodb
+          - name: MONGODB_ROOT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                key: mongodb-root-password
+                name: tensorsec-mongo-mongodb
+          - name: MONGODB_REPLICA_SET_KEY
+            valueFrom:
+              secretKeyRef:
+                key: mongodb-replica-set-key
+                name: tensorsec-mongo-mongodb
+          - name: ALLOW_EMPTY_PASSWORD
+            value: "no"
+          - name: MONGODB_SYSTEM_LOG_VERBOSITY
+            value: "0"
+          - name: MONGODB_DISABLE_SYSTEM_LOG
+            value: "no"
+          - name: MONGODB_ENABLE_IPV6
+            value: "no"
+          - name: MONGODB_ENABLE_DIRECTORY_PER_DB
+            value: "no"
+          image: docker.io/bitnami/mongodb:4.4.2-debian-10-r27
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            exec:
+              command:
+              - mongo
+              - --eval
+              - db.adminCommand('ping')
+            failureThreshold: 6
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 5
+          name: mongodb
+          ports:
+          - containerPort: 27017
+            name: mongodb
+            protocol: TCP
+          readinessProbe:
+            exec:
+              command:
+              - mongo
+              - --eval
+              - db.adminCommand('ping')
+            failureThreshold: 6
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 5
+          resources: {}
+          securityContext:
+            procMount: Default
+            runAsNonRoot: true
+            runAsUser: 1001
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /bitnami/mongodb
+            name: datadir
+          - mountPath: /scripts/setup.sh
+            name: scripts
+            subPath: setup.sh
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext:
+          fsGroup: 1001
+        serviceAccount: tensorsec-mongo-mongodb
+        serviceAccountName: tensorsec-mongo-mongodb
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - configMap:
+            defaultMode: 493
+            name: tensorsec-mongo-mongodb-scripts
+          name: scripts
+    updateStrategy:
+      type: RollingUpdate
+    volumeClaimTemplates:
+    - metadata:
+        creationTimestamp: null
+        name: datadir
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        dataSource: null
+        resources:
+          requests:
+            storage: 8Gi
+- apiVersion: apps/v1
+  kind: StatefulSet
+  metadata:
+    generation: 1
+    labels:
+      app.kubernetes.io/component: arbiter
+      app.kubernetes.io/instance: tensorsec-mongo
+      app.kubernetes.io/managed-by: Tiller
+      app.kubernetes.io/name: mongodb
+      helm.sh/chart: mongodb-10.3.1
+    name: tensorsec-mongo-mongodb-arbiter
+  spec:
+    podManagementPolicy: OrderedReady
+    replicas: 1
+    revisionHistoryLimit: 10
+    selector:
+      matchLabels:
+        app.kubernetes.io/component: arbiter
+        app.kubernetes.io/instance: tensorsec-mongo
+        app.kubernetes.io/name: mongodb
+    serviceName: tensorsec-mongo-mongodb-arbiter-headless
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app.kubernetes.io/component: arbiter
+          app.kubernetes.io/instance: tensorsec-mongo
+          app.kubernetes.io/managed-by: Tiller
+          app.kubernetes.io/name: mongodb
+          helm.sh/chart: mongodb-10.3.1
+      spec:
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+            - podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/component: arbiter
+                    app.kubernetes.io/instance: tensorsec-mongo
+                    app.kubernetes.io/name: mongodb
+                namespaces:
+                - harbor-scanner
+                topologyKey: kubernetes.io/hostname
+              weight: 1
+        containers:
+        - env:
+          - name: BITNAMI_DEBUG
+            value: "false"
+          - name: MY_POD_NAME
+            valueFrom:
+              fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.name
+          - name: MY_POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.namespace
+          - name: K8S_SERVICE_NAME
+            value: tensorsec-mongo-mongodb-arbiter-headless
+          - name: MONGODB_REPLICA_SET_MODE
+            value: arbiter
+          - name: MONGODB_INITIAL_PRIMARY_HOST
+            value: tensorsec-mongo-mongodb-0.tensorsec-mongo-mongodb-headless.$(MY_POD_NAMESPACE).svc.cluster.local
+          - name: MONGODB_REPLICA_SET_NAME
+            value: rs0
+          - name: MONGODB_ADVERTISED_HOSTNAME
+            value: $(MY_POD_NAME).$(K8S_SERVICE_NAME).$(MY_POD_NAMESPACE).svc.cluster.local
+          - name: MONGODB_INITIAL_PRIMARY_ROOT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                key: mongodb-root-password
+                name: tensorsec-mongo-mongodb
+          - name: MONGODB_REPLICA_SET_KEY
+            valueFrom:
+              secretKeyRef:
+                key: mongodb-replica-set-key
+                name: tensorsec-mongo-mongodb
+          - name: ALLOW_EMPTY_PASSWORD
+            value: "no"
+          image: docker.io/bitnami/mongodb:4.4.2-debian-10-r27
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 6
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: mongodb
+            timeoutSeconds: 5
+          name: mongodb-arbiter
+          ports:
+          - containerPort: 27017
+            name: mongodb
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 6
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            tcpSocket:
+              port: mongodb
+            timeoutSeconds: 5
+          resources: {}
+          securityContext:
+            procMount: Default
+            runAsUser: 1001
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+        dnsPolicy: ClusterFirst
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext:
+          fsGroup: 1001
+        serviceAccount: tensorsec-mongo-mongodb
+        serviceAccountName: tensorsec-mongo-mongodb
+        terminationGracePeriodSeconds: 30
+    updateStrategy:
+      type: OnDelete
+- apiVersion: apps/v1
+  kind: StatefulSet
+  metadata:
+    labels:
+      app: postgresql
+      chart: postgresql-6.3.9
+      heritage: Tiller
+      release: tensorsec
+    name: tensorsec-postgresql
+  spec:
+    podManagementPolicy: OrderedReady
+    replicas: 1
+    revisionHistoryLimit: 10
+    selector:
+      matchLabels:
+        app: postgresql
+        release: tensorsec
+        role: master
+    serviceName: tensorsec-postgresql-headless
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app: postgresql
+          chart: postgresql-6.3.9
+          heritage: Tiller
+          release: tensorsec
+          role: master
+        name: tensorsec-postgresql
+      spec:
+        containers:
+        - env:
+          - name: BITNAMI_DEBUG
+            value: "false"
+          - name: POSTGRESQL_PORT_NUMBER
+            value: "5432"
+          - name: POSTGRESQL_VOLUME_DIR
+            value: /bitnami/postgresql
+          - name: PGDATA
+            value: /var/lib/postgresql/clair
+          - name: POSTGRES_USER
+            value: postgres
+          - name: POSTGRES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                key: postgresql-password
+                name: tensorsec-postgresql
+          - name: POSTGRES_DB
+            value: postgres
+          image: lixiaowei/tensorsec-postgres:v1
+          imagePullPolicy: Always
+          livenessProbe:
+            exec:
+              command:
+              - sh
+              - -c
+              - exec pg_isready -U "postgres" -d "postgres" -h 127.0.0.1 -p 5432
+            failureThreshold: 6
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 5
+          name: tensorsec-postgresql
+          ports:
+          - containerPort: 5432
+            name: postgresql
+            protocol: TCP
+          readinessProbe:
+            exec:
+              command:
+              - sh
+              - -c
+              - |
+                pg_isready -U "postgres" -d "postgres" -h 127.0.0.1 -p 5432
+            failureThreshold: 6
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+          securityContext:
+            procMount: Default
+            runAsUser: 70
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /bitnami/postgresql
+            name: data
+        dnsPolicy: ClusterFirst
+        initContainers:
+        - command:
+          - sh
+          - -c
+          - |
+            mkdir -p /bitnami/postgresql/data
+            chmod 700 /bitnami/postgresql/data
+            find /bitnami/postgresql -mindepth 0 -maxdepth 1 -not -name ".snapshot" -not -name "lost+found" | \
+              xargs chown -R 70:70
+          image: docker.io/bitnami/minideb:stretch
+          imagePullPolicy: Always
+          name: init-chmod-data
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+          securityContext:
+            procMount: Default
+            runAsUser: 0
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /bitnami/postgresql
+            name: data
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext:
+          fsGroup: 70
+        terminationGracePeriodSeconds: 30
+    updateStrategy:
+      type: RollingUpdate
+    volumeClaimTemplates:
+    - metadata:
+        creationTimestamp: null
+        name: data
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        dataSource: null
+        resources:
+          requests:
+            storage: 10Gi
+kind: List
+metadata:
+  resourceVersion: ""
+  selfLink: ""

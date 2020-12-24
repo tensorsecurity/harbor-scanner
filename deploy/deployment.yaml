@@ -1,0 +1,198 @@
+apiVersion: v1
+items:
+- apiVersion: extensions/v1beta1
+  kind: Deployment
+  metadata:
+    labels:
+      app: tensorsec-clair
+      chart: clair-0.1.3
+      heritage: Tiller
+      release: tensorsec
+    name: tensorsec-clair
+  spec:
+    progressDeadlineSeconds: 600
+    replicas: 1
+    revisionHistoryLimit: 10
+    selector:
+      matchLabels:
+        app: tensorsec-clair
+    strategy:
+      rollingUpdate:
+        maxSurge: 25%
+        maxUnavailable: 25%
+      type: RollingUpdate
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app: tensorsec-clair
+      spec:
+        containers:
+        - args:
+          - -log-level=debug
+          image: lixiaowei/tensorsec-clair:v1
+          imagePullPolicy: Always
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /health
+              port: 6061
+              scheme: HTTP
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          name: clair
+          ports:
+          - containerPort: 6060
+            name: clair-api
+            protocol: TCP
+          - containerPort: 6061
+            name: clair-health
+            protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /health
+              port: 6061
+              scheme: HTTP
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          resources:
+            limits:
+              cpu: 200m
+              memory: 1500Mi
+            requests:
+              cpu: 200m
+              memory: 1500Mi
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /etc/clair
+            name: clair-config
+            readOnly: true
+        dnsPolicy: ClusterFirst
+        initContainers:
+        - command:
+          - sh
+          - -c
+          - until pg_isready -h tensorsec-postgresql -p 5432; do echo waiting for
+            database; sleep 1; done;
+          image: postgres:11.3
+          imagePullPolicy: IfNotPresent
+          name: pg-ready-wait
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - name: clair-config
+          secret:
+            defaultMode: 420
+            secretName: tensorsec-clair
+- apiVersion: extensions/v1beta1
+  kind: Deployment
+  metadata:
+    labels:
+      app: scanner
+      chart: scanner-0.1.0
+      heritage: Tiller
+      release: tensorsec
+    name: tensorsec-scanner
+  spec:
+    progressDeadlineSeconds: 600
+    replicas: 1
+    revisionHistoryLimit: 10
+    selector:
+      matchLabels:
+        app.kubernetes.io/instance: tensorsec
+        app.kubernetes.io/name: scanner
+    strategy:
+      rollingUpdate:
+        maxSurge: 25%
+        maxUnavailable: 25%
+      type: RollingUpdate
+    template:
+      metadata:
+        creationTimestamp: null
+        labels:
+          app.kubernetes.io/instance: tensorsec
+          app.kubernetes.io/name: scanner
+      spec:
+        containers:
+        - args:
+          - --mongo-endpoint=tensorsec-mongodb:27017
+          - --mongo-database=vegeta
+          - --mongo-username=redstone
+          - --clair-remote-address=tensorsec-clair
+          - --clair-address=tensorsec-scanner
+          - --clair-port=9278
+          - --clair-postgresconnectionstring=postgres://postgres:password@tensorsec-postgresql:5432/postgres?sslmode=disable
+          - --clair-secretpattern=/config/patterns.json
+          - --redclair-skipregistrytlsverify
+          - --redis-endpoint=tensorsec-cache-redis-master:6379
+          - -v
+          command:
+          - /vegeta-scanner
+          env:
+          - name: TENSORSEC_MONGO_PASSWORD
+            value: redstoneMongo123
+          - name: TENSORSEC_REDIS_PASSWORD
+            value: lXXkZ300FW
+          image: lixiaowei/tensorsec-scanner:v1
+          imagePullPolicy: Always
+          name: scanner
+          ports:
+          - containerPort: 8080
+            name: scanner-api
+            protocol: TCP
+          - containerPort: 9278
+            name: scanner-layer
+            protocol: TCP
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          volumeMounts:
+          - mountPath: /config
+            name: scannerfiles
+          - mountPath: /var/run/docker.sock
+            name: dockersock
+          - mountPath: /tmp/
+            name: tmp
+        dnsPolicy: ClusterFirst
+        initContainers:
+        - command:
+          - sh
+          - -c
+          - for i in $(seq 1 200); do nc -z -w3 tensorsec-postgresql 5432 && exit
+            0 || sleep 3; done; exit 1
+          image: alpine
+          imagePullPolicy: IfNotPresent
+          name: postgres-listener
+          resources: {}
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+        restartPolicy: Always
+        schedulerName: default-scheduler
+        securityContext: {}
+        terminationGracePeriodSeconds: 30
+        volumes:
+        - hostPath:
+            path: /var/run/docker.sock
+            type: ""
+          name: dockersock
+        - hostPath:
+            path: /tmp/
+            type: ""
+          name: tmp
+        - configMap:
+            defaultMode: 420
+            name: tensorsec-scanner-configmap
+          name: scannerfiles
+kind: List
+metadata:
+  resourceVersion: ""
+  selfLink: ""
