@@ -2,7 +2,7 @@
 ## Features
 Support Chinese display    
 Support CVE、CNVD、CNNVD、CVSS   
-Support scanning image sensitive files (support custom rules)   
+ 
 ## Deploy
 ```
 git clone https://github.com/tensorsecurity/harbor-scanner.git
