@@ -166,28 +166,6 @@ items:
     patterns.json: |-
       [
         {
-          "descriptionEn": "Machine Key",
-          "descriptionZh": "机器密钥",
-          "secret_type": "FileContent",
-          "value": "machinekey"
-        },
-        {
-          "descriptionEn": "Potential cryptographic key bundle",
-          "descriptionZh": "潜在加密密钥束",
-          "secret_type": "Filename",
-          "value": "\\.asc$"
-        },
-        {
-          "descriptionEn": "Possible public key",
-          "descriptionZh": "可能的公钥",
-          "secret_type": "Filename",
-          "value": "\\.pub$"
-        },
-        {
-          "descriptionEn": "Database file",
-          "descriptionZh": "数据库文件",
-          "secret_type": "Filename",
-          "value": "\\.sql$"
         }
       ]
   kind: ConfigMap
