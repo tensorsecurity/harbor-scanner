@@ -1,7 +1,7 @@
 # TensorSecurity Harbor-Scanner
 ## Features
 Support Chinese display    
-Support CVE、CNVD、CNNVD、CVSS   
+Support CVE、CNVD、CNNVD、RHSA、CVSS   
  
 ## Deploy
 ```
